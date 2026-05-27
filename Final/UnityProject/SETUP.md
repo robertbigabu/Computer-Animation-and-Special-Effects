@@ -85,20 +85,20 @@ If Safe Mode appears with `ArgumentOutOfRangeException` errors → the patch in 
 
 ## 6. Phase 1 Progress
 
-### Day 1 — Setup (✅ complete, May 22)
+### Setup (✅ complete, May 22)
 - Unity project created (3D Built-In template).
 - RVO2-CS library imported to `Assets/Plugins/RVO2/`.
 - .NET 8 throw-helper compatibility patch applied (see §4.1).
 - Clean compile verified.
 - Code orientation: located `Agent.cs::ComputeNewVelocity` (entry point, line 76) and `LinearProgram2/3` (lines 609 / 658) as the modification surfaces for kinematic constraints.
 
-### Day 2 — Unity wrapper + test scenes (✅ complete)
+###  Unity wrapper + test scenes (✅ complete)
 - `RVOManager.cs`: singleton that drives the push→DoStep→read cycle centrally (no execution-order issues).
 - `RVOAgent.cs`: per-agent wrapper; RVO owns positions (matching official Circle.cs pattern).
 - `CircleCrossingSetup.cs`: configurable scenarios (HeadOn / FourWay / Staggered8).
 - `ConstraintComparisonSetup.cs`: side-by-side vanilla vs constrained demo with timed U-turn.
 
-### Day 3–5 — Kinematic constraints in the LP (✅ complete)
+###  Kinematic constraints in the LP (✅ complete)
 - Added `_maxAccel` (m/s²) and `_maxAngularVel` (rad/s) fields to `Agent.cs`.
 - **Max acceleration**: 16-sided polygonal approximation of the acceleration disk (centered on `_velocity`, radius `maxAccel·dt`), added as ORCA half-plane constraints before the LP call.
 - **Max angular velocity**: two half-planes forming a wedge around the current heading direction (±`maxAngularVel·dt` radians). Automatically skipped when agent is nearly stationary or turn budget exceeds π.
@@ -106,7 +106,7 @@ If Safe Mode appears with `ArgumentOutOfRangeException` errors → the patch in 
 - New Simulator API: `Get/SetAgentMaxAccel()`, `Get/SetAgentMaxAngularVel()`.
 - Per-agent overrides via RVOAgent Inspector fields (`-1` = use manager default, `0` = disabled, `>0` = custom).
 
-### Day 8–11 — Animation bridge (✅ code complete, clips needed)
+### Animation bridge (✅ code complete, clips needed)
 - `AnimationBridge.cs`: converts world-space `CurrentVelocity` → character-local `MoveX`/`MoveY` Animator parameters with configurable walk/run speed mapping and damping.
 - `Editor/BlendTreeSetup.cs`: menu item (Tools > Phase1 > Create Locomotion Controller) auto-creates AnimatorController with 2D Freeform Cartesian blend tree and 6 motion slots (Idle, Walk Fwd/Back, Strafe L/R, Run Fwd).
 - `Editor/CharacterPrefabSetup.cs`: menu item (Tools > Phase1 > Assemble Character Prefab) auto-wires imported FBX + Animator + RVOAgent + AnimationBridge into a prefab.
