@@ -1,0 +1,8 @@
+.DS_Store
+Final/UnityProject/Library/
+Final/UnityProject/Logs/
+Final/UnityProject/UserSettings/
+Final/UnityProject/Temp/
+Final/.claude/
+*.csproj
+*.slnx

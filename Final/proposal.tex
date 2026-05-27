@@ -1,0 +1,101 @@
+\documentclass[11pt, a4paper]{article}
+
+% --- Packages ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage{xeCJK} % Required for Chinese characters in XeLaTeX
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{setspace}
+\usepackage{booktabs}
+
+% --- Page Setup ---
+\geometry{left=25mm, right=25mm, top=25mm, bottom=25mm}
+\setstretch{1.25} % Professional line spacing
+
+% --- Fonts ---
+% Overleaf's XeLaTeX compiler typically includes Fandol fonts by default.
+\setCJKmainfont{Noto Sans CJK TC}
+
+% --- Section Styles ---
+\titleformat{\section}{\large\bfseries}{}{0em}{}[\titlerule]
+\titlespacing*{\section}{0pt}{1.5ex plus 1ex minus .2ex}{1ex plus .2ex}
+
+% --- Title Info ---
+\title{
+    \textbf{A Hybrid Navigation Controller: Enhancing ORCA with Kinematic Constraints and Global Pathfinding} \\
+    \large 混合式導航控制器：結合運動學約束與全域尋路之 ORCA 演算法改良
+}
+\author{張維程, 林辰翰}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{Goal / Motivation (目標與動機)}
+\paragraph{動機：}
+原始的 ORCA 論文在處理多代理人 (Multi-agent) 避障時展現了卓越的效能，但其官方測試場景（如 Circle Crossing）多局限於無障礙或簡單邊界的空曠空間。在現代遊戲或複雜的建築疏散模擬中，環境通常充滿死角、L型轉彎與迷宮。作為一種「區域性 (Local)」演算法，純 ORCA 在這類環境中極易陷入「死胡同 (Local Minima)」的困境。此外，ORCA 假設了每個 agent 都可以任意的改變速度及方向，這在 animation 內會導致動作不連貫，不符合真實世界的運動限制。
+
+\paragraph{目標：}
+本專題將實作 2011 年的 ORCA 經典論文。首先，我們將重現原論文的基礎測試場景，接著設計多種「複雜極限場景」來觀察並記錄純 ORCA 演算法的失效邊界。最終，我們將嘗試引入 Unity NavMesh 作為全域導航系統，以混合控制器的架構解決 ORCA 的死胡同問題，並將平滑化後的物理參數輸入至 3D 角色的 Blend Tree 中，實現自然、無滑步的動畫。
+
+\section{Related Work / Background (相關研究與背景)}
+\begin{itemize}[leftmargin=*, labelsep=1em]
+    \item \textbf{ORCA (Reciprocal n-body Collision Avoidance, 2011)：} 提出基於速度障礙物 (Velocity Obstacle) 與線性規劃的最佳化避障模型。原論文透過 Circle Crossing 等場景證明其能實現平滑且無碰撞的群眾運動。
+    \item \textbf{區域與全域導航的侷限性：} 純全域導航 (如 A* 或 NavMesh) 無法處理動態擁擠與穿模；純區域避障 (如 ORCA) 缺乏宏觀路徑規劃能力，遇 U 型障礙物會發生死結。
+\end{itemize}
+
+\section{Proposed Approach (研究方法)}
+
+\subsection{開發工具 (Tools)}
+\begin{itemize}
+    \item \textbf{核心引擎：} Unity Game Engine (C\#) 作為主要開發與即時演算環境。
+    \item \textbf{全域導航系統：} 使用 Unity 內建的 NavMesh API 處理環境網格建構與 A* 尋路計算。
+    \item \textbf{區域避障基底：} 引入並修改 GitHub 上現有的 ORCA (RVO2 Library) C\# 實作。
+\end{itemize}
+
+\subsection{實作方法}
+本計畫核心貢獻在於對避障演算法的「物理約束改良」與「導航架構整合」，分為以下三階段：
+
+\begin{description}
+    \item[Phase 1 - 加入運動學約束之避障改良與動畫橋接] \hfill \\
+    針對原始 ORCA 假設 Agent 能瞬間改變速度方向的缺陷，我們將在 RVO2 演算法底層加入運動學限制（包括 \textbf{最大加速度} 與 \textbf{最大旋轉角速度}）。透過修改速度選擇的線性規劃限制條件，建構一個 \textbf{動畫橋接層}，將受約束後的平滑速度向量轉換為角色局部座標參數，用以動態驅動 Unity 中的 2D Blend Tree，解決動作不連貫與劇烈抖動的問題。
+
+    \item[Phase 2 - 複雜地形失效分析 (Analysis of Local Minima)] \hfill \\
+    建立具備 L 型轉角、U 型死胡同及多重轉折的迷宮場景。我們將測試並記錄「僅具備運動學約束改良但缺乏全域規劃」的 ORCA 代理人，在遇到靜態障礙物時如何因區域最佳解（Local Minima）而卡死。此階段將作為對比組，凸顯全域尋路之必要性。
+
+    \item[Phase 3 - 導航系統整合 (NavMesh + Constrained ORCA Integration)] \hfill \\
+    實作混合式導航架構。由 NavMesh 負責計算全域路徑，並將路徑點的方向作為「期望速度 (Preferred Velocity)」輸入至改良後的 RVO2 演算法中。此架構將結合全域的路徑規劃能力與具備物理真實性的區域避障，解決卡死問題並同時維持動畫品質。
+\end{description}
+
+\section{Expected Results (預期成果)}
+
+\subsection{Guaranteed to Work (保證達成)}
+\begin{itemize}
+    \item 成功修改 RVO2 演算法，加入加速度與旋轉限制，輸出平滑的運動路徑，並成功驅動 3D 角色模型的 Blend Tree。
+    \item 在 Unity 中建立複雜的迷宮壓力測試場景，並視覺化記錄純區域避障算法失效（卡死於牆角）的具體情況。
+    \item 成功整合 NavMesh 與 RVO2，使 Agent 能順暢通過 Phase 2 中原本會卡死的 L 型與 U 型地形。
+\end{itemize}
+
+\subsection{May Work (進階目標)}
+\begin{itemize}
+    \item \textbf{動態擁擠回饋：} 當某路段受阻時，系統將資訊回傳給 NavMesh 動態調高 Area Cost，讓代理人自動選擇空曠路徑。
+    \item \textbf{動畫融合優化：} 根據實際速度向量與向心力，即時調整 3D 模型轉向時的身體傾斜角度（Procedural Leaning），提升視覺真實度。
+\end{itemize}
+
+\section{Tasks of Each Member (人員分工)}
+\begin{center}
+\begin{tabular}{ll}
+\toprule
+\textbf{成員姓名} & \textbf{主要負責項目} \\
+\midrule
+張維程 & Phase 1：運動學約束改良、動畫系統橋接 \\
+林辰翰 & Phase 2 \& 3：迷宮場景建置、NavMesh 整合、失效分析 \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+\end{document}
