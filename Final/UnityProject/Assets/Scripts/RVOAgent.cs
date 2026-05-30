@@ -93,9 +93,12 @@ public class RVOAgent : MonoBehaviour
         }
         else
         {
-            // Unit-speed preferred velocity (matches official Circle.cs example).
-            // When close, decelerate naturally.
-            float prefSpeed = Mathf.Min(dist, 1f);
+            // Preferred speed = maxSpeed, decelerate smoothly within the last
+            // maxSpeed metres so the agent doesn't overshoot the target.
+            float maxSpd   = maxSpeedOverride > 0f
+                ? maxSpeedOverride
+                : RVOManager.Instance.maxSpeed;
+            float prefSpeed = Mathf.Min(dist, maxSpd);
             UnityEngine.Vector3 prefDir = toTarget / dist;
             RVO.Vector2 prefVel = new RVO.Vector2(
                 prefDir.x * prefSpeed,
@@ -135,6 +138,17 @@ public class RVOAgent : MonoBehaviour
                 10f * Time.fixedDeltaTime
             );
         }
+    }
+
+    /// <summary>Teleport this agent to a new world position and zero its velocity.
+    /// Updates both the Unity Transform and RVO's internal state so the agent
+    /// starts fresh from the new location on the very next simulation step.</summary>
+    public void Respawn(UnityEngine.Vector3 worldPos)
+    {
+        transform.position = worldPos;
+        Simulator.Instance.SetAgentPosition(AgentId, RVOManager.ToRVO(worldPos));
+        CurrentVelocity = UnityEngine.Vector3.zero;
+        HasArrived = false;
     }
 
     void OnDestroy()

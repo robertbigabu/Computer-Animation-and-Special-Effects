@@ -96,20 +96,16 @@ public class RVOManager : MonoBehaviour
 
     void FixedUpdate()
     {
-        // ── Phase 1: all agents set preferred velocity ──
+        // ── Phase 1: all agents set preferred velocity (once per FixedUpdate) ──
         for (int i = 0; i < _agents.Count; i++)
-        {
             _agents[i].PushToSimulator();
-        }
 
         // ── Phase 2: run the LP solver (RVO moves positions internally) ──
         Simulator.Instance.DoStep();
 
         // ── Phase 3: all agents read back position + velocity ──
         for (int i = 0; i < _agents.Count; i++)
-        {
             _agents[i].ReadFromSimulator();
-        }
     }
 
     void OnDestroy()

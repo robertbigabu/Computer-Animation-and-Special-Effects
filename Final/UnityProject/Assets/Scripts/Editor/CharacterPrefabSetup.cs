@@ -30,7 +30,8 @@ public static class CharacterPrefabSetup
             return;
         }
 
-        // Find the first FBX in Assets/Characters/
+        // Find the character FBX in Assets/Characters/ — must have a SkinnedMeshRenderer
+        // (animation-only FBX files have no mesh and are skipped).
         string[] guids = AssetDatabase.FindAssets("t:Model", new[] { "Assets/Characters" });
         if (guids.Length == 0)
         {
@@ -40,8 +41,27 @@ public static class CharacterPrefabSetup
             return;
         }
 
-        string fbxPath = AssetDatabase.GUIDToAssetPath(guids[0]);
-        GameObject modelPrefab = AssetDatabase.LoadAssetAtPath<GameObject>(fbxPath);
+        string fbxPath = null;
+        GameObject modelPrefab = null;
+        foreach (string guid in guids)
+        {
+            string path = AssetDatabase.GUIDToAssetPath(guid);
+            GameObject candidate = AssetDatabase.LoadAssetAtPath<GameObject>(path);
+            if (candidate != null && candidate.GetComponentInChildren<SkinnedMeshRenderer>() != null)
+            {
+                fbxPath = path;
+                modelPrefab = candidate;
+                break;
+            }
+        }
+
+        if (modelPrefab == null)
+        {
+            EditorUtility.DisplayDialog("No Character Found",
+                "No FBX with a mesh (Skin) found in Assets/Characters/.\n" +
+                "Make sure the character FBX (not animation-only) is imported there.", "OK");
+            return;
+        }
 
         if (modelPrefab == null)
         {
