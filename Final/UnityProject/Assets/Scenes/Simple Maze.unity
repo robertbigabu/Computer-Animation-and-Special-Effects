@@ -215,7 +215,7 @@ MonoBehaviour:
   agentPrefab: {fileID: 965522670770388929, guid: 87a3e5b3e727f41898a8c345d2121822, type: 3}
   spawnCenter: {x: 40, y: 0, z: 120}
   spawnRows: 5
-  spawnCols: 20
+  spawnCols: 8
   spawnSpacing: 10
   goalCenter: {x: 40, y: 0, z: -120}
   arrivalThreshold: 4
@@ -348,7 +348,7 @@ MonoBehaviour:
   agentPrefab: {fileID: 965522670770388929, guid: 87a3e5b3e727f41898a8c345d2121822, type: 3}
   spawnCenter: {x: 40, y: 0, z: -120}
   spawnRows: 5
-  spawnCols: 20
+  spawnCols: 8
   spawnSpacing: 10
   goalCenter: {x: 40, y: 0, z: 120}
   arrivalThreshold: 4

@@ -7,28 +7,41 @@ using UnityEngine.InputSystem;
 /// Aggregates multiple MazeAgentSetup groups, handles the shared UI,
 /// monitors all-arrived condition, and triggers the group reset.
 ///
-/// Setup: place one MazeSceneManager in the scene alongside one or more
-/// MazeAgentSetup GameObjects. It auto-discovers all groups at Start().
-/// Press N to toggle NavMesh mode across all groups simultaneously.
+/// Keyboard shortcuts:
+///   N     – toggle NavMesh mode (Phase 2 ↔ Phase 3) across all groups
+///   R     – force-end current round immediately, record arrival rate, and respawn
 /// </summary>
 public class MazeSceneManager : MonoBehaviour
 {
     [Header("Group Reset")]
-    [Tooltip("Seconds to wait after all agents arrive before respawning everyone.")]
+    [Tooltip("Seconds to wait after all agents arrive (or R is pressed) before respawning.")]
     public float resetDelay = 1.5f;
 
     [Header("NavMesh Mode (toggle with N key)")]
     public bool useNavMesh = true;
 
+    // ─── Round record ──────────────────────────────────────────────────
+    private struct RoundRecord
+    {
+        public float Time;      // elapsed seconds
+        public int   Arrived;   // agents that reached goal
+        public int   Total;     // total agents
+        public bool  Forced;    // true = ended by R key, false = natural completion
+        public bool  NavMesh;   // mode active during this round
+
+        public float ArrivalRate => Total > 0 ? (float)Arrived / Total : 0f;
+    }
+
     // ─── Runtime ──────────────────────────────────────────────────────
     private readonly List<MazeAgentSetup> _groups  = new();
-    private readonly List<float>          _history = new(); // seconds per round
+    private readonly List<RoundRecord>    _history = new();
 
-    private GUIStyle _labelStyle;
-    private GUIStyle _historyTitleStyle;
-    private GUIStyle _historyStyle;
-    private GUIStyle _panelStyle;
-    private GUIStyle _toggleBtnStyle;
+    private GUIStyle  _labelStyle;
+    private GUIStyle  _historyStyle;
+    private GUIStyle  _forcedStyle;
+    private GUIStyle  _panelStyle;
+    private GUIStyle  _toggleBtnStyle;
+    private GUIStyle  _forceEndBtnStyle;
     private Texture2D _bgTexture;
 
     private bool _historyVisible = true;
@@ -44,38 +57,57 @@ public class MazeSceneManager : MonoBehaviour
         if (_groups.Count == 0)
             Debug.LogWarning("[MazeSceneManager] No MazeAgentSetup found in scene.");
         else
-            Debug.Log($"[MazeSceneManager] Managing {_groups.Count} group(s). Press N to toggle NavMesh mode.");
+            Debug.Log($"[MazeSceneManager] Managing {_groups.Count} group(s). " +
+                      $"[N] toggle NavMesh  [R] force-end round.");
 
         _roundActive = true;
     }
 
     void Update()
     {
-        // N key: toggle NavMesh mode across all groups.
+        // ── N: toggle NavMesh mode ─────────────────────────────────────
         if (Keyboard.current.nKey.wasPressedThisFrame)
         {
             useNavMesh = !useNavMesh;
             foreach (var g in _groups)
                 g.SetNavMesh(useNavMesh);
-            Debug.Log($"[MazeSceneManager] NavMesh: {(useNavMesh ? "ON (Phase 3)" : "OFF (Phase 2 failure)")}");
+            Debug.Log($"[MazeSceneManager] NavMesh: {(useNavMesh ? "ON (Phase 3)" : "OFF (Phase 2)")}");
         }
 
-        // Advance round timer while agents are still moving.
+        // ── R: force-end current round ─────────────────────────────────
+        // Only fires when a round is active and no reset is already pending.
+        if (Keyboard.current.rKey.wasPressedThisFrame && _roundActive && _resetTimer < 0f)
+        {
+            int total   = TotalAgents();
+            int arrived = TotalArrived();
+
+            _roundActive = false;
+            RecordRound(arrived, total, forced: true);
+            _resetTimer = resetDelay;
+
+            Debug.Log($"[MazeSceneManager] R pressed — Round {_history.Count} force-ended at " +
+                      $"{_roundTimer:F2}s  ({arrived}/{total} arrived).");
+        }
+
+        // ── Round timer ────────────────────────────────────────────────
         if (_roundActive)
             _roundTimer += Time.deltaTime;
 
-        int total   = TotalAgents();
-        int arrived = TotalArrived();
-
-        // All arrived → record time and start reset countdown.
-        if (_resetTimer < 0f && total > 0 && arrived == total)
+        // ── Natural completion ─────────────────────────────────────────
         {
-            _roundActive = false;
-            _history.Add(_roundTimer);
-            _resetTimer = resetDelay;
-            Debug.Log($"[MazeSceneManager] Round {_history.Count} finished in {_roundTimer:F2}s.");
+            int total   = TotalAgents();
+            int arrived = TotalArrived();
+
+            if (_resetTimer < 0f && total > 0 && arrived == total)
+            {
+                _roundActive = false;
+                RecordRound(arrived, total, forced: false);
+                _resetTimer = resetDelay;
+                Debug.Log($"[MazeSceneManager] Round {_history.Count} complete in {_roundTimer:F2}s.");
+            }
         }
 
+        // ── Respawn countdown ──────────────────────────────────────────
         if (_resetTimer >= 0f)
         {
             _resetTimer -= Time.deltaTime;
@@ -86,9 +118,22 @@ public class MazeSceneManager : MonoBehaviour
 
                 _roundTimer  = 0f;
                 _roundActive = true;
-                Debug.Log("[MazeSceneManager] All agents arrived — respawning all groups.");
+                Debug.Log("[MazeSceneManager] Respawning all groups — next round started.");
             }
         }
+    }
+
+    // ─── Helpers ──────────────────────────────────────────────────────
+    void RecordRound(int arrived, int total, bool forced)
+    {
+        _history.Add(new RoundRecord
+        {
+            Time    = _roundTimer,
+            Arrived = arrived,
+            Total   = total,
+            Forced  = forced,
+            NavMesh = useNavMesh,
+        });
     }
 
     int TotalAgents()
@@ -110,59 +155,68 @@ public class MazeSceneManager : MonoBehaviour
     {
         InitStyles();
 
-        // ── Left panel: live stats ────────────────────────────────────
-        string modeStr = useNavMesh
-            ? "<color=cyan>NavMesh + ORCA</color>"
-            : "<color=yellow>Pure ORCA (may get stuck)</color>";
-
         int total   = TotalAgents();
         int arrived = TotalArrived();
         int round   = _history.Count + 1;
+        float rate  = total > 0 ? (float)arrived / total * 100f : 0f;
 
+        string modeStr = useNavMesh
+            ? "<color=cyan>NavMesh + ORCA  [Phase 3]</color>"
+            : "<color=yellow>Pure ORCA  [Phase 2]</color>";
+
+        // ── Left panel: live stats ─────────────────────────────────────
         GUILayout.BeginVertical();
-        GUILayout.Label($"Mode   : {modeStr}   <b>[N]</b> to toggle", _labelStyle);
-        GUILayout.Label($"Groups : {_groups.Count}",                   _labelStyle);
-        GUILayout.Label($"Agents : {total}",                           _labelStyle);
-        GUILayout.Label($"Round  : {round}",                           _labelStyle);
-        GUILayout.Label($"Time   : {_roundTimer:F1}s",                 _labelStyle);
-        GUILayout.Label($"Arrived: {arrived} / {total}",               _labelStyle);
+        GUILayout.Label($"Mode    : {modeStr}",                        _labelStyle);
+        GUILayout.Label($"Groups  : {_groups.Count}",                  _labelStyle);
+        GUILayout.Label($"Agents  : {total}",                          _labelStyle);
+        GUILayout.Label($"Round   : {round}",                          _labelStyle);
+        GUILayout.Label($"Time    : {_roundTimer:F1}s",                _labelStyle);
+        GUILayout.Label($"Arrived : {arrived} / {total}  ({rate:F0}%)",_labelStyle);
+        GUILayout.Space(6f);
+        GUILayout.Label("<b>[N]</b> NavMesh mode   <b>[R]</b> Force end round", _labelStyle);
 
         if (_resetTimer >= 0f)
-            GUILayout.Label($"<color=orange>Resetting in {_resetTimer:F1}s…</color>", _labelStyle);
+            GUILayout.Label($"<color=orange>Respawning in {_resetTimer:F1}s…</color>", _labelStyle);
+
         GUILayout.EndVertical();
 
-        // ── Right panel: round history ────────────────────────────────
-        const float panelW   = 220f;
-        const float rowH     = 24f;
-        const float titleH   = 32f;
-        const float btnH     = 28f;
-        const float padding  = 10f;
+        // ── Right panel: round history ─────────────────────────────────
+        const float panelW  = 290f;
+        const float rowH    = 26f;
+        const float btnH    = 28f;
+        const float padding = 10f;
         float x = Screen.width - panelW - 12f;
         float y = 12f;
 
-        // Height: always show toggle button; expand for rows when visible.
         float panelH = btnH + padding * 2f
                      + (_historyVisible && _history.Count > 0
-                            ? titleH + _history.Count * rowH + padding
+                            ? _history.Count * rowH + padding
                             : 0f);
 
-        // Solid dark background box.
         GUI.Box(new Rect(x - padding, y - padding, panelW + padding * 2f, panelH + padding * 2f),
                 GUIContent.none, _panelStyle);
 
         GUILayout.BeginArea(new Rect(x, y, panelW, panelH));
 
-        // Toggle button.
         string btnLabel = _historyVisible ? "Round History  ▲" : "Round History  ▼";
         if (GUILayout.Button(btnLabel, _toggleBtnStyle, GUILayout.Height(btnH)))
             _historyVisible = !_historyVisible;
 
-        // History rows (only when expanded and there is data).
         if (_historyVisible && _history.Count > 0)
         {
-            GUILayout.Space(padding);
+            GUILayout.Space(padding * 0.5f);
             for (int i = 0; i < _history.Count; i++)
-                GUILayout.Label($"Round {i + 1} : {_history[i]:F2}s", _historyStyle);
+            {
+                RoundRecord r    = _history[i];
+                string modeTag   = r.NavMesh ? "[P3]" : "[P2]";
+                string forcedTag = r.Forced  ? " ✗"   : " ✓";
+                string pct       = $"{r.ArrivalRate * 100f:F0}%";
+                string line      = $"R{i + 1} {modeTag}{forcedTag}  {r.Arrived}/{r.Total} ({pct})  {r.Time:F1}s";
+
+                // Green = natural 100 %, orange = forced or incomplete.
+                GUIStyle style = (!r.Forced && r.Arrived == r.Total) ? _historyStyle : _forcedStyle;
+                GUILayout.Label(line, style);
+            }
         }
 
         GUILayout.EndArea();
@@ -180,34 +234,35 @@ public class MazeSceneManager : MonoBehaviour
         };
         _labelStyle.normal.textColor = Color.white;
 
-        _historyTitleStyle = new GUIStyle(_labelStyle) { fontSize = 15 };
-        _historyTitleStyle.normal.textColor = new Color(1f, 0.85f, 0.3f);
-
+        // History row — completed round (green).
         _historyStyle = new GUIStyle(_labelStyle)
         {
-            fontSize  = 14,
+            fontSize  = 13,
             fontStyle = FontStyle.Normal,
         };
-        _historyStyle.normal.textColor = Color.white;
+        _historyStyle.normal.textColor = new Color(0.4f, 1f, 0.4f);   // green
 
-        // Solid dark background for the right panel.
+        // History row — forced / incomplete round (orange).
+        _forcedStyle = new GUIStyle(_historyStyle);
+        _forcedStyle.normal.textColor = new Color(1f, 0.65f, 0.1f);   // orange
+
+        // Solid dark background.
         _bgTexture = new Texture2D(1, 1);
-        _bgTexture.SetPixel(0, 0, new Color(0.1f, 0.1f, 0.1f, 0.85f));
+        _bgTexture.SetPixel(0, 0, new Color(0.08f, 0.08f, 0.08f, 0.88f));
         _bgTexture.Apply();
 
         _panelStyle = new GUIStyle();
         _panelStyle.normal.background = _bgTexture;
 
-        // Toggle button: inherits default button look but with bigger font.
         _toggleBtnStyle = new GUIStyle(GUI.skin.button)
         {
             fontSize  = 14,
             fontStyle = FontStyle.Bold,
             alignment = TextAnchor.MiddleLeft,
         };
-        _toggleBtnStyle.normal.textColor  = new Color(1f, 0.85f, 0.3f);
-        _toggleBtnStyle.hover.textColor   = Color.white;
-        _toggleBtnStyle.active.textColor  = Color.white;
+        _toggleBtnStyle.normal.textColor = new Color(1f, 0.85f, 0.3f);
+        _toggleBtnStyle.hover.textColor  = Color.white;
+        _toggleBtnStyle.active.textColor = Color.white;
     }
 
     void OnDestroy()
